@@ -113,6 +113,11 @@ app.get('/customTests', (req, res) => {
         const tests = [];
 
         jsonFiles.forEach(file => {
+
+            if (file === '-.json') {
+                return;
+            }
+
             const filePath = path.join(testDirPath, file);
             const fileData = fs.readFileSync(filePath, 'utf8');
             const jsonData = JSON.parse(fileData);
