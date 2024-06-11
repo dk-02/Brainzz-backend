@@ -24,4 +24,5 @@ logs
 
 # Environment variables
 .env*
-.vercel
+
+functions/
