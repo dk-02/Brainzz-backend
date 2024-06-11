@@ -14,7 +14,7 @@ app.use(bodyParser.json());
 // Save new test data
 app.post('/save-test', (req, res) => {
     const testName = generateRoute(req.body.testTitle);
-    const filePath = path.join(__dirname, '../customTests', `${testName}.json`);
+    const filePath = path.join(__dirname, 'customTests', `${testName}.json`);
 
     if (fs.existsSync(filePath)) {
         return res.status(400).send('Test with the same name already exists');
@@ -33,7 +33,7 @@ app.post('/save-test', (req, res) => {
 // Load data for specific preset test
 app.get('/presetTests/:testTitle', (req, res) => {
     const testTitle = req.params.testTitle;
-    const filePath = path.join(__dirname, '../presetTests', `${testTitle}.json`);
+    const filePath = path.join(__dirname, 'presetTests', `${testTitle}.json`);
 
     fs.readFile(filePath, 'utf8', (err, data) => {
         if (err) {
@@ -46,7 +46,7 @@ app.get('/presetTests/:testTitle', (req, res) => {
 // Load data for specific custom test
 app.get('/customTests/:testTitle', (req, res) => {
     const testTitle = req.params.testTitle;
-    const filePath = path.join(__dirname, '../customTests', `${testTitle}.json`);
+    const filePath = path.join(__dirname, 'customTests', `${testTitle}.json`);
 
     fs.readFile(filePath, 'utf8', (err, data) => {
         if (err) {
@@ -60,7 +60,7 @@ app.get('/customTests/:testTitle', (req, res) => {
 
 // Load data for all presetTests
 app.get('/presetTests', (req, res) => {
-    const testDirPath = path.join(__dirname, '../presetTests');
+    const testDirPath = path.join(__dirname, 'presetTests');
 
     fs.readdir(testDirPath, (err, files) => {
         if (err) {
@@ -101,7 +101,7 @@ const generateRoute = (testName) => {
 
 // Load data for all custom tests
 app.get('/customTests', (req, res) => {
-    const testDirPath = path.join(__dirname, '../customTests');
+    const testDirPath = path.join(__dirname, 'customTests');
 
     fs.readdir(testDirPath, (err, files) => {
         if (err) {
