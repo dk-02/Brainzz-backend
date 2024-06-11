@@ -140,6 +140,7 @@ app.get('/customTests', (req, res) => {
         });
 
 
+        res.setHeader('Access-Control-Allow-Origin', '*');
         res.json(tests);
     });
 });
