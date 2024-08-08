@@ -1,11 +1,13 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
+const cors = require("cors");
 
 const app = express();
 const port = 8080;
 
 app.use(bodyParser.json());
+app.use(cors());
 
 const dbURI = 'mongodb://127.0.0.1:27017/test';
 
@@ -66,13 +68,34 @@ const presetTestSchema = new mongoose.Schema({
     results: []
 });
 
+const counterSchema = new mongoose.Schema({
+    _id: { type: String },
+    sequence_value: { type: Number }
+});
+
+const CounterModel = mongoose.model('Counter', counterSchema, 'counters');
+
 const testsModel = mongoose.model('Test', testSchema, "AddedTests");
 const presetTestsModel = mongoose.model('PresetTests', presetTestSchema, 'PresetTests');
 
+let seqDoc = {
+    _id: String,
+    sequence_value: Number,
+    __v: Number
+}
+
+async function getNextSequenceValue(sequenceName) {
+    seqDoc = await CounterModel.findOneAndUpdate(
+        { _id: sequenceName },
+        { $inc: { sequence_value: 1 } },
+        { returnOriginal: false, new: true, upsert: true }
+    );
+
+    return seqDoc.sequence_value;
+}
 app.get('/presetTests', async (req, res) => {
 
     await presetTestsModel.find().then(doc => {
-       console.log("All preset tests from db: ", doc);
        res.status(200).json(doc);
     }).catch(err => {
         console.log("Error fetching data: ", err);
@@ -84,7 +107,6 @@ app.get('/presetTests', async (req, res) => {
 app.get('/tests', async (req, res) => {
 
     await testsModel.find().then(doc => {
-        console.log("All tests from db: ", doc);
         res.status(200).json(doc);
     }).catch(err => {
         console.error("Error fetching docs: ", err);
@@ -93,10 +115,21 @@ app.get('/tests', async (req, res) => {
 
 });
 
+
+app.get('/presetTests/:id', async (req, res) => {
+
+    await presetTestsModel.findOne( { "_id" : parseInt(req.params.id, 10) } ).then(doc => {
+        res.status(200).json(doc);
+    }).catch(err => {
+        console.error("Error fetching doc: ", err);
+        res.status(500).json( {message : err.message} );
+    });
+
+});
+
 app.get('/tests/:id', async (req, res) => {
 
     await testsModel.findOne( { "_id" : parseInt(req.params.id, 10) } ).then(doc => {
-        console.log("Test from db: ", doc);
         res.status(200).json(doc);
     }).catch(err => {
         console.error("Error fetching doc: ", err);
@@ -107,8 +140,12 @@ app.get('/tests/:id', async (req, res) => {
 
 
 app.post('/tests', async (req, res) => {
+    const newId = await getNextSequenceValue('tests');
 
-    const test = new testsModel(req.body);
+    const test = new testsModel({
+        ...req.body,
+        _id: newId
+    });
 
     await test.save().then(newTest => {
         console.log("Test saved successfully!");
