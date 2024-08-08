@@ -57,7 +57,29 @@ const testSchema = new mongoose.Schema({
     }
 });
 
-const testsModel = mongoose.model('Test', testSchema, "Zavrsni");
+const presetTestSchema = new mongoose.Schema({
+    _id: Number,
+    name: String,
+    route: String,
+    description: String,
+    questions: [],
+    results: []
+});
+
+const testsModel = mongoose.model('Test', testSchema, "AddedTests");
+const presetTestsModel = mongoose.model('PresetTests', presetTestSchema, 'PresetTests');
+
+app.get('/presetTests', async (req, res) => {
+
+    await presetTestsModel.find().then(doc => {
+       console.log("All preset tests from db: ", doc);
+       res.status(200).json(doc);
+    }).catch(err => {
+        console.log("Error fetching data: ", err);
+        res.status(500).json({message : err.message});
+    });
+
+});
 
 app.get('/tests', async (req, res) => {
 
