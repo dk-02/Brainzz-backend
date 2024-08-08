@@ -1,153 +1,101 @@
-const express = require('express');
-const serverless = require('serverless-http');
-const bodyParser = require('body-parser');
-const fs = require('fs');
-const path = require('path');
-const cors = require('cors');
+const express = require("express");
+const mongoose = require("mongoose");
+const bodyParser = require("body-parser");
 
 const app = express();
-const port = 3001;
+const port = 8080;
 
-const corsOptions = {
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
 app.use(bodyParser.json());
 
-// Save new test data
-app.post('/save-test', (req, res) => {
-    const testName = generateRoute(req.body.testTitle);
-    const filePath = path.join(__dirname, 'customTests', `${testName}.json`);
+const dbURI = 'mongodb://127.0.0.1:27017/test';
 
-    if (fs.existsSync(filePath)) {
-        return res.status(400).send('Test with the same name already exists');
-    }
+mongoose.connect(dbURI)
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((error) => console.error('Connection error', error));
 
-    const testData = JSON.stringify(req.body);
 
-    fs.writeFile(filePath, testData, (err) => {
-        if (err) {
-            return res.status(500).send('Failed to save test data');
+const testSchema = new mongoose.Schema({
+    _id: { type: Number },
+    testTitle: { type: String },
+    testDescription: { type: String },
+    testInstructions: { type: String },
+    questionType: { type: String },
+    additionalData: {
+        numberOfOptions: { type: Number },
+        style: { type: String },
+        customLabels: { type: [String] }
+    },
+    questions: [
+        {
+            question: {type: String },
+            options: [{
+                optionText: { type: String },
+                optionValue: { type: Number }
+            }]
         }
-        res.send('Test data saved successfully');
-    });
-});
-
-// Load data for specific preset test
-app.get('/presetTests/:testTitle', (req, res) => {
-    const testTitle = req.params.testTitle;
-    const filePath = path.join(__dirname, 'presetTests', `${testTitle}.json`);
-
-    fs.readFile(filePath, 'utf8', (err, data) => {
-        if (err) {
-            return res.status(500).send('Failed to load test data');
-        }
-        res.send(JSON.parse(data));
-    });
-});
-
-// Load data for specific custom test
-app.get('/customTests/:testTitle', (req, res) => {
-    const testTitle = req.params.testTitle;
-    const filePath = path.join(__dirname, 'customTests', `${testTitle}.json`);
-
-    fs.readFile(filePath, 'utf8', (err, data) => {
-        if (err) {
-            return res.status(500).send('Failed to load test data');
-        }
-        res.send(JSON.parse(data));
-    });
-});
-
-
-
-// Load data for all presetTests
-app.get('/presetTests', (req, res) => {
-    const testDirPath = path.join(__dirname, 'presetTests');
-
-    fs.readdir(testDirPath, (err, files) => {
-        if (err) {
-            return res.status(500).send('Failed to load test data');
-        }
-
-        // Filter just JSON files
-        const jsonFiles = files.filter(file => file.endsWith('.json'));
-
-        const tests = [];
-
-        jsonFiles.forEach(file => {
-            const filePath = path.join(testDirPath, file);
-            const fileData = fs.readFileSync(filePath, 'utf8');
-            const jsonData = JSON.parse(fileData);
-
-            const testSummary = {
-                name: jsonData.name,
-                route: jsonData.route,
-                description: jsonData.description
-            };
-
-            tests.push(testSummary);
-        });
-
-
-        res.json(tests);
-    });
-});
-
-
-const generateRoute = (testName) => {
-    if (!testName) {
-        return "";
-    }
-    return testName.replace(/\s+/g, '-');
-};
-
-// Load data for all custom tests
-app.get('/customTests', (req, res) => {
-    const testDirPath = path.join(__dirname, 'customTests');
-
-    fs.readdir(testDirPath, (err, files) => {
-        if (err) {
-            return res.status(500).send('Failed to load test data');
-        }
-        // Filter just JSON files
-        const jsonFiles = files.filter(file => file.endsWith('.json'));
-
-        const tests = [];
-
-        jsonFiles.forEach(file => {
-
-            if (file === '-.json') {
-                return;
+    ],
+    gradingMethod: {
+        calculationMethod: { type: String },
+        questionsToGroup: { type: String },
+        groups: [
+            {
+                groupID: { type: Number },
+                groupName: { type: String },
+                groupQuestions: { type: [Number] }
             }
+        ]
+    },
+    sortingMethod: { type: String },
+    feedback: {
+        feedbackShowMethod: { type: String },
+        feedbacks: [
+            {
+                groupID: { type: Number },
+                text: { type: String }
+            }
+        ]
+    }
+});
 
-            const filePath = path.join(testDirPath, file);
-            const fileData = fs.readFileSync(filePath, 'utf8');
-            const jsonData = JSON.parse(fileData);
-            // Generate route from test name
-            const route = generateRoute(jsonData.testTitle);
+const testsModel = mongoose.model('Test', testSchema, "Zavrsni");
 
-            const testSummary = {
-                name: jsonData.testTitle,
-                route: route,
-                description: jsonData.testDescription
-            };
+app.get('/tests', async (req, res) => {
 
-            tests.push(testSummary);
-        });
-
-
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.json(tests);
+    await testsModel.find().then(doc => {
+        console.log("All tests from db: ", doc);
+        res.status(200).json(doc);
+    }).catch(err => {
+        console.error("Error fetching docs: ", err);
+        res.status(500).json( {message : err.message} );
     });
+
+});
+
+app.get('/tests/:id', async (req, res) => {
+
+    await testsModel.findOne( { "_id" : parseInt(req.params.id, 10) } ).then(doc => {
+        console.log("Test from db: ", doc);
+        res.status(200).json(doc);
+    }).catch(err => {
+        console.error("Error fetching doc: ", err);
+        res.status(500).json( {message : err.message} );
+    });
+
 });
 
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+app.post('/tests', async (req, res) => {
+
+    const test = new testsModel(req.body);
+
+    await test.save().then(newTest => {
+        console.log("Test saved successfully!");
+        res.status(201).json(newTest);
+    }).catch(err => {
+        console.error("Error fetching doc: ", err);
+        res.status(400).json( {message : err.message} );
+    });
+
 });
 
-module.exports = app;
+app.listen(port);
