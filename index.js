@@ -22,6 +22,7 @@ const testSchema = new mongoose.Schema({
     testDescription: { type: String },
     testInstructions: { type: String },
     questionType: { type: String },
+    languageTag: String,
     additionalData: {
         numberOfOptions: { type: Number },
         style: { type: String },
@@ -61,9 +62,10 @@ const testSchema = new mongoose.Schema({
 
 const presetTestSchema = new mongoose.Schema({
     _id: Number,
-    name: String,
+    testTitle: String,
     route: String,
-    description: String,
+    testDescription: String,
+    languageTag: String,
     questions: [],
     results: []
 });
