@@ -1,74 +1,28 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const bodyParser = require("body-parser");
-const cors = require("cors");
 
+const cors = require("cors");
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const presetTestsModel = require('./models/presetTests');
+const testsModel = require('./models/tests');
+const usersModel = require('./models/users');
+
+require('dotenv').config();
 const app = express();
 const port = 8080;
 
 app.use(bodyParser.json());
 app.use(cors());
 
-const dbURI = 'mongodb://127.0.0.1:27017/test';
+const dbURI = process.env.MONGO_URI;
 
 mongoose.connect(dbURI)
     .then(() => console.log('Connected to MongoDB'))
     .catch((error) => console.error('Connection error', error));
 
-
-const testSchema = new mongoose.Schema({
-    _id: { type: Number },
-    testTitle: { type: String },
-    testDescription: { type: String },
-    testInstructions: { type: String },
-    questionType: { type: String },
-    languageTag: String,
-    additionalData: {
-        numberOfOptions: { type: Number },
-        style: { type: String },
-        customLabels: { type: [String] }
-    },
-    questions: [
-        {
-            question: {type: String },
-            options: [{
-                optionText: { type: String },
-                optionValue: { type: Number }
-            }]
-        }
-    ],
-    gradingMethod: {
-        calculationMethod: { type: String },
-        questionsToGroup: { type: String },
-        groups: [
-            {
-                groupID: { type: Number },
-                groupName: { type: String },
-                groupQuestions: { type: [Number] }
-            }
-        ]
-    },
-    sortingMethod: { type: String },
-    feedback: {
-        feedbackShowMethod: { type: String },
-        feedbacks: [
-            {
-                groupID: { type: Number },
-                text: { type: String }
-            }
-        ]
-    }
-});
-
-const presetTestSchema = new mongoose.Schema({
-    _id: Number,
-    testTitle: String,
-    route: String,
-    testDescription: String,
-    languageTag: String,
-    questions: [],
-    results: []
-});
 
 const counterSchema = new mongoose.Schema({
     _id: { type: String },
@@ -76,9 +30,6 @@ const counterSchema = new mongoose.Schema({
 });
 
 const CounterModel = mongoose.model('Counter', counterSchema, 'counters');
-
-const testsModel = mongoose.model('Test', testSchema, "AddedTests");
-const presetTestsModel = mongoose.model('PresetTests', presetTestSchema, 'PresetTests');
 
 let seqDoc = {
     _id: String,
@@ -95,6 +46,8 @@ async function getNextSequenceValue(sequenceName) {
 
     return seqDoc.sequence_value;
 }
+
+// GET RUTE
 app.get('/presetTests', async (req, res) => {
 
     await presetTestsModel.find().then(doc => {
@@ -116,7 +69,6 @@ app.get('/tests', async (req, res) => {
     });
 
 });
-
 
 app.get('/presetTests/:id', async (req, res) => {
 
@@ -141,7 +93,24 @@ app.get('/tests/:id', async (req, res) => {
 });
 
 
-app.post('/tests', async (req, res) => {
+// POST RUTE
+const authMiddleware = (req, res, next) => {
+    const token = req.header('x-auth-token');
+
+    if (!token) {
+        return res.status(401).json({ msg: 'No token, authorization denied' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded.user;
+        next();
+    } catch (err) {
+        res.status(401).json({ msg: 'Token is not valid' });
+    }
+};
+
+app.post('/tests', authMiddleware, async (req, res) => {
     const newId = await getNextSequenceValue('tests');
 
     const test = new testsModel({
@@ -158,5 +127,74 @@ app.post('/tests', async (req, res) => {
     });
 
 });
+
+app.post('/register', async (req, res) => {
+    const { name, lastName, email, username, password } = req.body;
+
+    try {
+        let user = await usersModel.findOne({ username });
+        if (user) {
+            return res.status(400).json({ msg: 'User already exists' });
+        }
+
+        user = new usersModel({
+            name,
+            lastName,
+            email,
+            username,
+            password
+        });
+
+        await user.save();
+
+        const payload = {
+            user: {
+                id: user.id
+            }
+        };
+
+        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
+            if (err) throw err;
+            res.json({ token });
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+});
+
+app.post('/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    try {
+        let user = await usersModel.findOne({ username });
+        if (!user) {
+            return res.status(400).json({ msg: 'Invalid Credentials' });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ msg: 'Invalid Credentials' });
+        }
+
+        const payload = {
+            user: {
+                id: user.id
+            }
+        };
+
+        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
+            if (err) throw err;
+            res.json({ msg: "Success", tkn: token });
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+});
+
+
+
+
 
 app.listen(port);
