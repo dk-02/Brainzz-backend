@@ -9,6 +9,7 @@ const jwt = require('jsonwebtoken');
 const presetTestsModel = require('./models/presetTests');
 const testsModel = require('./models/tests');
 const usersModel = require('./models/users');
+const adminsModel = require('./models/admins');
 
 require('dotenv').config();
 const app = express();
@@ -92,8 +93,7 @@ app.get('/tests/:id', async (req, res) => {
 
 });
 
-
-// POST RUTE
+// AUTH MIDDLEWARE
 const authMiddleware = (req, res, next) => {
     const token = req.header('x-auth-token');
 
@@ -110,6 +110,30 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
+const adminAuthMiddleware = async (req, res, next) => {
+    const token = req.header('x-auth-token');
+
+    if (!token) {
+        return res.status(401).json({ msg: 'No token, authorization denied' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded.user;
+
+        // Provjeri je li korisnik admin
+        const adminUser = await adminsModel.findById(req.user.id);
+        if (!adminUser) {
+            return res.status(403).json({ msg: 'Access denied: Not an admin' });
+        }
+
+        next();
+    } catch (err) {
+        res.status(401).json({ msg: 'Token is not valid' });
+    }
+};
+
+// POST RUTE
 app.post('/tests', authMiddleware, async (req, res) => {
     const newId = await getNextSequenceValue('tests');
 
@@ -128,7 +152,7 @@ app.post('/tests', authMiddleware, async (req, res) => {
 
 });
 
-app.post('/register', async (req, res) => {
+app.post('/register', adminAuthMiddleware, async (req, res) => {
     const { name, lastName, email, username, password } = req.body;
 
     try {
@@ -155,7 +179,38 @@ app.post('/register', async (req, res) => {
 
         jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
             if (err) throw err;
-            res.json({ token });
+            res.json({ status: "Success" });
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+});
+
+
+app.post('/admin/login', async (req, res) => {
+    const { username, password } = req.body;
+
+    try {
+        let adminUser = await adminsModel.findOne({ username });
+        if (!adminUser) {
+            return res.status(400).json({ msg: 'Invalid Credentials' });
+        }
+
+        const isMatch = await bcrypt.compare(password, adminUser.password);
+        if (!isMatch) {
+            return res.status(400).json({ msg: 'Invalid Credentials' });
+        }
+
+        const payload = {
+            user: {
+                id: adminUser.id
+            }
+        };
+
+        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
+            if (err) throw err;
+            res.json({ msg: "Success", token });
         });
     } catch (err) {
         console.error(err.message);
@@ -179,7 +234,7 @@ app.post('/login', async (req, res) => {
 
         const payload = {
             user: {
-                id: user.id
+                username: user.username
             }
         };
 
@@ -192,8 +247,6 @@ app.post('/login', async (req, res) => {
         res.status(500).send('Server error');
     }
 });
-
-
 
 
 
