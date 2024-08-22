@@ -9,7 +9,6 @@ const jwt = require('jsonwebtoken');
 const presetTestsModel = require('./models/presetTests');
 const testsModel = require('./models/tests');
 const usersModel = require('./models/users');
-const adminsModel = require('./models/admins');
 
 require('dotenv').config();
 const app = express();
@@ -121,9 +120,9 @@ const adminAuthMiddleware = async (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded.user;
 
-        // Provjeri je li korisnik admin
-        const adminUser = await adminsModel.findById(req.user.id);
-        if (!adminUser) {
+        // Provjera je li korisnik admin
+        const adminUser = await usersModel.findById(req.user.id);
+        if (!adminUser.isAdmin) {
             return res.status(403).json({ msg: 'Access denied: Not an admin' });
         }
 
@@ -188,36 +187,6 @@ app.post('/register', adminAuthMiddleware, async (req, res) => {
 });
 
 
-app.post('/admin/login', async (req, res) => {
-    const { username, password } = req.body;
-
-    try {
-        let adminUser = await adminsModel.findOne({ username });
-        if (!adminUser) {
-            return res.status(400).json({ msg: 'Invalid Credentials' });
-        }
-
-        const isMatch = await bcrypt.compare(password, adminUser.password);
-        if (!isMatch) {
-            return res.status(400).json({ msg: 'Invalid Credentials' });
-        }
-
-        const payload = {
-            user: {
-                id: adminUser.id
-            }
-        };
-
-        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
-            if (err) throw err;
-            res.json({ msg: "Success", token });
-        });
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server error');
-    }
-});
-
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
@@ -232,10 +201,13 @@ app.post('/login', async (req, res) => {
             return res.status(400).json({ msg: 'Invalid Credentials' });
         }
 
+        const role = user.isAdmin ? 'admin' : 'user';
+
         const payload = {
             user: {
-                username: user.username
-            }
+                id: user.id
+            },
+            role: role
         };
 
         jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
