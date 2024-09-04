@@ -47,16 +47,62 @@ async function getNextSequenceValue(sequenceName) {
     return seqDoc.sequence_value;
 }
 
-// GET RUTE
-app.get('/presetTests', async (req, res) => {
+// AUTH MIDDLEWARE
+const authMiddleware = (req, res, next) => {
+    const token = req.header('x-auth-token');
 
+    if (!token) {
+        return res.status(401).json({ msg: 'No token, authorization denied' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded.user;
+        next();
+    } catch (err) {
+        res.status(401).json({ msg: 'Token is not valid' });
+    }
+};
+const adminAuthMiddleware = async (req, res, next) => {
+    const token = req.header('x-auth-token');
+
+    if (!token) {
+        return res.status(401).json({ msg: 'No token, authorization denied' });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded.user;
+
+        // Provjera je li korisnik admin
+        const adminUser = await usersModel.findById(req.user.id);
+        if (!adminUser.isAdmin) {
+            return res.status(403).json({ msg: 'Access denied: Not an admin' });
+        }
+
+        next();
+    } catch (err) {
+        res.status(401).json({ msg: 'Token is not valid' });
+    }
+};
+
+// GET RUTE
+app.get('/users', adminAuthMiddleware, async (req, res) => {
+    await usersModel.find().then(users => {
+        res.status(200).json(users);
+    }).catch(err => {
+       console.log("Error fetching data: ", err);
+       res.status(500).json({message : err.message});
+    });
+});
+
+app.get('/presetTests', async (req, res) => {
     await presetTestsModel.find().then(doc => {
        res.status(200).json(doc);
     }).catch(err => {
         console.log("Error fetching data: ", err);
         res.status(500).json({message : err.message});
     });
-
 });
 
 app.get('/tests', async (req, res) => {
@@ -92,45 +138,6 @@ app.get('/tests/:id', async (req, res) => {
 
 });
 
-// AUTH MIDDLEWARE
-const authMiddleware = (req, res, next) => {
-    const token = req.header('x-auth-token');
-
-    if (!token) {
-        return res.status(401).json({ msg: 'No token, authorization denied' });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded.user;
-        next();
-    } catch (err) {
-        res.status(401).json({ msg: 'Token is not valid' });
-    }
-};
-
-const adminAuthMiddleware = async (req, res, next) => {
-    const token = req.header('x-auth-token');
-
-    if (!token) {
-        return res.status(401).json({ msg: 'No token, authorization denied' });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded.user;
-
-        // Provjera je li korisnik admin
-        const adminUser = await usersModel.findById(req.user.id);
-        if (!adminUser.isAdmin) {
-            return res.status(403).json({ msg: 'Access denied: Not an admin' });
-        }
-
-        next();
-    } catch (err) {
-        res.status(401).json({ msg: 'Token is not valid' });
-    }
-};
 
 // POST RUTE
 app.post('/tests', authMiddleware, async (req, res) => {
@@ -151,8 +158,20 @@ app.post('/tests', authMiddleware, async (req, res) => {
 
 });
 
+
+// VALIDACIJA LOZINKE
+
+const validatePassword = (password) => {
+    const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    return passwordRegex.test(password);
+};
+
 app.post('/register', adminAuthMiddleware, async (req, res) => {
-    const { name, lastName, email, username, password } = req.body;
+    const { name, lastName, username, email, password, isAdmin } = req.body;
+
+    if (!validatePassword(password)) {
+        return res.status(400).send("Password must contain at least 1 capital letter, 1 number, 1 special character and be at least 8 characters long.");
+    }
 
     try {
         let user = await usersModel.findOne({ username });
@@ -163,9 +182,10 @@ app.post('/register', adminAuthMiddleware, async (req, res) => {
         user = new usersModel({
             name,
             lastName,
-            email,
             username,
-            password
+            email,
+            password,
+            isAdmin
         });
 
         await user.save();
@@ -191,7 +211,7 @@ app.post('/login', async (req, res) => {
     const { username, password } = req.body;
 
     try {
-        let user = await usersModel.findOne({ username });
+        let user = await usersModel.findOne({ "username" : username });
         if (!user) {
             return res.status(400).json({ msg: 'Invalid Credentials' });
         }
@@ -217,6 +237,108 @@ app.post('/login', async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).send('Server error');
+    }
+});
+
+app.post('/resetPassword', adminAuthMiddleware, async (req, res) => {
+    const { username, newPassword } = req.body;
+
+    if (!validatePassword(newPassword)) {
+        return res.status(400).send("Password must contain at least 1 capital letter, 1 number, 1 special character and be at least 8 characters long.");
+    }
+
+    try {
+        const user = await usersModel.findOne({ "username" : username });
+
+        if (!user) {
+            return res.status(404).json({ msg: 'User not found' });
+        }
+
+        user.password = newPassword;
+
+        await user.save();
+
+        res.status(200).json({ msg: 'Password reset successful' });
+    } catch (err) {
+        console.error('Error resetting password:', err.message);
+        res.status(500).send('Server error');
+    }
+
+});
+
+app.post('/editUserData', adminAuthMiddleware, async (req, res) => {
+
+    const { name, lastName, email, oldUsername, newUsername, isAdmin } = req.body;
+
+    try {
+
+        const adminCount = await usersModel.countDocuments({ isAdmin: true });
+
+        const userToEdit = await usersModel.findOne({ "username" : oldUsername });
+
+        if (userToEdit && userToEdit.isAdmin) {
+            if (adminCount <= 1) {
+                return res.status(400).send('You cannot remove the only administrator.');
+            }
+        }
+
+        let usernameCollision = await usersModel.findOne({ "username" : newUsername });
+
+        if (usernameCollision && usernameCollision.username !== oldUsername) {
+            return res.status(400).json({ msg: 'That username already exists, choose another one' });
+        }
+
+        let user = await usersModel.findOne({ "username" : oldUsername });
+
+        user.name = name;
+        user.lastName = lastName;
+        user.email = email;
+        user.username = newUsername;
+        user.isAdmin = isAdmin;
+
+
+        await user.save();
+
+        const payload = {
+            user: {
+                id: user.id
+            }
+        };
+
+        jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
+            if (err) throw err;
+            res.json({ status: "Success" });
+        });
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send('Server error');
+    }
+});
+
+
+app.delete('/deleteUser', authMiddleware, async (req, res) => {
+    const { username } = req.body;
+
+    try {
+        const adminCount = await usersModel.countDocuments({ isAdmin: true });
+
+        const userToDelete = await usersModel.findOne({ "username" : username });
+
+        if (userToDelete && userToDelete.isAdmin) {
+            if (adminCount <= 1) {
+                return res.status(400).send('You cannot remove the only administrator.');
+            }
+        }
+
+        const deletedUser = await usersModel.findOneAndDelete({ "username" : username });
+
+        if (!deletedUser) {
+            return res.status(404).send('User not found.');
+        }
+
+        res.status(200).send('User deleted successfully.');
+    } catch (error) {
+        res.status(500).send('There was an error deleting the user.');
     }
 });
 
