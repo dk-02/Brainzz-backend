@@ -274,12 +274,10 @@ app.post('/editUserData', adminAuthMiddleware, async (req, res) => {
 
         const adminCount = await usersModel.countDocuments({ isAdmin: true });
 
-        const userToEdit = await usersModel.findOne({ "username" : oldUsername });
+        // const userToEdit = await usersModel.findOne({ "username" : oldUsername });
 
-        if (userToEdit && userToEdit.isAdmin) {
-            if (adminCount <= 1) {
-                return res.status(400).send('You cannot remove the only administrator.');
-            }
+        if (!isAdmin && adminCount <= 1) {
+            return res.status(400).send('You cannot remove the only administrator.');
         }
 
         let usernameCollision = await usersModel.findOne({ "username" : newUsername });
