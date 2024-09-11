@@ -145,15 +145,16 @@ app.post('/tests', authMiddleware, async (req, res) => {
 
     const test = new testsModel({
         ...req.body,
-        _id: newId
+        _id: newId,
+        createdBy: req.user.id
     });
 
     await test.save().then(newTest => {
         console.log("Test saved successfully!");
         res.status(201).json(newTest);
     }).catch(err => {
-        console.error("Error fetching doc: ", err);
-        res.status(400).json( {message : err.message} );
+        console.error("Error fetching doc!");
+        res.status(400).json( {message : "Error fetching doc!"} );
     });
 
 });
@@ -232,7 +233,7 @@ app.post('/login', async (req, res) => {
 
         jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '1h' }, (err, token) => {
             if (err) throw err;
-            res.json({ msg: "Success", tkn: token });
+            res.json({ msg: "Success", tkn: token, userId: user._id });
         });
     } catch (err) {
         console.error(err.message);
@@ -340,6 +341,28 @@ app.delete('/deleteUser', authMiddleware, async (req, res) => {
     }
 });
 
+
+app.delete('/deleteTest', authMiddleware, async (req, res) => {
+    const { _id } = req.body;
+
+    try {
+        const testToDelete = await testsModel.findOne({ "_id" : _id });
+
+        if (!testToDelete) {
+            return res.status(400).send('Test not found.');
+        }
+
+        if (testToDelete.createdBy.toString() !== req.user.id) {
+            return res.status(403).send({msg: 'You are not the author of this test.'});
+        }
+
+        await testsModel.findOneAndDelete({ "_id": _id });
+
+        res.status(200).send('Test deleted successfully.');
+    } catch (error) {
+        res.status(500).send('There was an error deleting the test.');
+    }
+});
 
 
 app.listen(port);
